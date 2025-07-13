@@ -7,3 +7,6 @@ DwellWell is a Streamlit app for evaluating the purchase of a two-bedroom, two-b
 1. Install dependencies with `pip install -r requirements.txt`.
 2. Execute `streamlit run app.py`.
 3. Run `ruff --fix .` and `pytest -q` before committing changes.
+
+## Usage
+- You can upload a CSV of listings to pre-fill deal variables.
