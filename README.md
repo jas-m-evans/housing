@@ -1,6 +1,10 @@
 # DwellWell
 
+[![CI](https://github.com/jas-m-evans/housing/actions/workflows/ci.yml/badge.svg)](https://github.com/jas-m-evans/housing/actions/workflows/ci.yml)
+
 DwellWell is a Streamlit app for evaluating the purchase of a two-bedroom, two-bathroom condo in downtown Vancouver. It calculates key financial metrics using user inputs and will eventually include Monte Carlo simulations to explore different market scenarios.
+
+All PRs are auto-linted & tested via GitHub Actions.
 
 ## Running the app
 
