@@ -3,6 +3,8 @@ import math
 import pandas as pd
 import streamlit as st
 
+from models import key_metrics, simulate_property
+
 st.set_page_config(page_title="DwellWell", layout="wide")
 
 uploaded_file = st.file_uploader("Upload Listings CSV", type="csv")
@@ -61,20 +63,60 @@ vacancy_pct = st.sidebar.number_input(
 )
 scenario = st.sidebar.selectbox("Scenario", ["Live-in", "Rent-out"])
 
+
+@st.cache_data
+def run_simulation() -> pd.DataFrame:
+    return simulate_property(
+        price=purchase_price,
+        rent=expected_rent,
+        down_pct=down_payment_pct,
+        annual_rate=interest_rate,
+        strata_fee=strata_fee,
+        property_tax=property_tax,
+        vacancy_pct=vacancy_pct,
+    )
+
 st.title("DwellWell")
 
 st.header("Key Metrics")
 col1, col2, col3 = st.columns(3)
-col1.metric("Monthly Mortgage", "0")
-col2.metric("Net Cash Flow", "0")
-col3.metric("ROI", "0")
 
-# TODO: Plug in Monte Carlo simulation results here
+if st.button("Run Simulation"):
+    df = run_simulation()
+    metrics = key_metrics(df)
 
-st.header("Projections")
-empty_df = pd.DataFrame({"x": [], "y": []})
-line_chart = alt.Chart(empty_df).mark_line().encode(x="x", y="y")
-bar_chart = alt.Chart(empty_df).mark_bar().encode(x="x", y="y")
+    col1.metric("Monthly Mortgage", f"${metrics['monthly_mortgage']:.0f}")
+    col2.metric("Median Year-1 Cash Flow", f"${metrics['p50_cash_flow']:.0f}")
+    col3.metric("Equity Year 10", f"${metrics['p50_equity_year10']:.0f}")
 
-st.altair_chart(line_chart, use_container_width=True)
-st.altair_chart(bar_chart, use_container_width=True)
+    equity_stats = (
+        df.groupby("year")
+        ["equity"]
+        .quantile([0.1, 0.5, 0.9])
+        .unstack()
+        .reset_index()
+        .rename(columns={0.1: "p10", 0.5: "p50", 0.9: "p90"})
+    )
+
+    line = (
+        alt.Chart(equity_stats)
+        .mark_line()
+        .encode(x="year", y="p50")
+    )
+    band = (
+        alt.Chart(equity_stats)
+        .mark_area(opacity=0.3)
+        .encode(x="year", y="p10", y2="p90")
+    )
+    equity_chart = band + line
+
+    cf_hist = (
+        alt.Chart(df[df["year"] == 1])
+        .mark_bar()
+        .encode(x=alt.X("net_cash_flow", bin=True), y="count()")
+    )
+
+    st.header("Projections")
+    st.altair_chart(equity_chart, use_container_width=True)
+    st.altair_chart(cf_hist, use_container_width=True)
+
