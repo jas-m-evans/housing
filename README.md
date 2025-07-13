@@ -10,3 +10,5 @@ DwellWell is a Streamlit app for evaluating the purchase of a two-bedroom, two-b
 
 ## Usage
 - You can upload a CSV of listings to pre-fill deal variables.
+- Adjust the sidebar parameters then click **Run Simulation** to generate
+  projected cash flow and equity charts.
