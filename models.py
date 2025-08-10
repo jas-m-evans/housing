@@ -1,4 +1,4 @@
-"""Financial models for DwellWell."""
+"""Financial models for Dwelly."""
 
 from __future__ import annotations
 

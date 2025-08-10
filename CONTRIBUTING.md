@@ -1,4 +1,4 @@
-# Contributing to DwellWell
+# Contributing to Dwelly
 
 - Use **Python 3.11**.
 - Follow **PEP 8** style guidelines. Run `ruff --fix .` before committing.

@@ -6,6 +6,8 @@ Dwelly is a Streamlit app for evaluating the purchase of a two-bedroom, two-bath
 
 Listings live in the UI.
 
+All inputs are in CAD dollars; internal helpers may use cents, UI displays dollars.
+
 All PRs are auto-linted & tested via GitHub Actions.
 
 ## Running the app

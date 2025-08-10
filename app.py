@@ -1,9 +1,26 @@
 import altair as alt
-import pandas as pd
 import streamlit as st
 
-from models import key_metrics, simulate_property
+from models import key_metrics, mortgage_payment, simulate_property
 from utils import coerce_numeric_fields
+
+DEFAULTS = dict(
+    purchase_price=750000,
+    down_payment_pct=20.0,
+    interest_rate=5.0,
+    strata_fee=450,
+    property_tax=2201,
+    expected_rent=3270,
+    vacancy_pct=2.0,
+    scenario="Live-in",
+    selected_listing=None,
+)
+
+
+def fmt_money(x: float | int, cents: bool = False) -> str:
+    v = (x / 100.0) if cents else float(x)
+    return f"${v:,.0f}"
+
 
 st.set_page_config(page_title="Dwelly", layout="wide")
 
@@ -47,45 +64,34 @@ if not st.session_state["listings"]:
         },
     ]
 
-DEFAULTS = {
-    "purchase_price": 0,
-    "down_payment_pct": 20.0,
-    "interest_rate": 5.0,
-    "strata_fee": 0,
-    "property_tax": 0,
-    "expected_rent": 0,
-    "vacancy_pct": 2.0,
-    "scenario": "Live-in",
-}
-
 for k, v in DEFAULTS.items():
     st.session_state.setdefault(k, v)
-
-st.session_state.setdefault("selected_listing", "Custom inputs (no listing)")
-
-
-def reset_inputs() -> None:
-    for k, v in DEFAULTS.items():
-        st.session_state[k] = v
-    st.session_state["selected_listing"] = "Custom inputs (no listing)"
-
 
 st.title("Dwelly")
 
 with st.expander("Manage Listings"):
-    labels = [f"{listing['address']} – ${listing['list_price']}" for listing in st.session_state['listings']]
-    options = ["Custom inputs (no listing)"] + labels
-    selected_label = st.selectbox(
-        "Selected listing", options, key="selected_listing"
-    )
-    selected_index = options.index(selected_label) - 1
+    listings = st.session_state["listings"]
+    labels = [f"{lst['address']} – ${lst['list_price']}" for lst in listings]
+    options = [None] + list(range(len(listings)))
 
-    if selected_index >= 0:
-        listing = st.session_state["listings"][selected_index]
-        st.session_state["purchase_price"] = listing["list_price"]
-        st.session_state["strata_fee"] = listing["strata_fee"]
-        st.session_state["property_tax"] = listing["property_tax"]
-        st.session_state["expected_rent"] = listing["expected_rent"]
+    def format_option(i: int | None) -> str:
+        return "Custom inputs (no listing)" if i is None else labels[i]
+
+    selected_index = st.selectbox(
+        "Selected listing", options, key="selected_listing", format_func=format_option
+    )
+
+    if selected_index is not None:
+        listing = listings[selected_index]
+        fields = {
+            "purchase_price": listing["list_price"],
+            "strata_fee": listing["strata_fee"],
+            "property_tax": listing["property_tax"],
+            "expected_rent": listing["expected_rent"],
+        }
+        if any(st.session_state[k] != v for k, v in fields.items()):
+            st.session_state.update(fields)
+            st.rerun()
     else:
         listing = {}
 
@@ -138,8 +144,18 @@ with st.expander("Manage Listings"):
             ["list_price", "strata_fee", "property_tax", "expected_rent", "sqft"],
         )
         st.session_state["listings"].append(new_listing)
+        st.session_state.update(
+            {
+                "selected_listing": len(st.session_state["listings"]) - 1,
+                "purchase_price": new_listing["list_price"],
+                "strata_fee": new_listing["strata_fee"],
+                "property_tax": new_listing["property_tax"],
+                "expected_rent": new_listing["expected_rent"],
+            }
+        )
         st.toast("Listing added")
-    elif update and selected_index >= 0:
+        st.rerun()
+    elif update and selected_index is not None:
         updated_listing = {
             "address": address,
             "city": city,
@@ -156,98 +172,115 @@ with st.expander("Manage Listings"):
             ["list_price", "strata_fee", "property_tax", "expected_rent", "sqft"],
         )
         st.session_state["listings"][selected_index] = updated_listing
+        st.session_state.update(
+            {
+                "purchase_price": updated_listing["list_price"],
+                "strata_fee": updated_listing["strata_fee"],
+                "property_tax": updated_listing["property_tax"],
+                "expected_rent": updated_listing["expected_rent"],
+            }
+        )
         st.toast("Listing updated")
-    elif delete and selected_index >= 0:
+        st.rerun()
+    elif delete and selected_index is not None:
         st.session_state["listings"].pop(selected_index)
-        st.session_state["selected_listing"] = "Custom inputs (no listing)"
+        for key in ["purchase_price", "strata_fee", "property_tax", "expected_rent"]:
+            st.session_state[key] = DEFAULTS[key]
+        st.session_state["selected_listing"] = None
         st.toast("Listing deleted")
+        st.rerun()
 
 st.sidebar.header("Input Parameters")
 
-purchase_price = st.sidebar.number_input(
-    "Purchase Price (CAD)",
-    min_value=0,
-    step=1000,
-    key="purchase_price",
+st.sidebar.number_input(
+    "Purchase Price (CAD)", min_value=0, step=1000, key="purchase_price"
 )
-
-down_payment_pct = st.sidebar.number_input(
+st.sidebar.number_input(
     "Down Payment (%)", min_value=0.0, max_value=100.0, key="down_payment_pct"
 )
-
-interest_rate = st.sidebar.number_input(
+st.sidebar.number_input(
     "Interest Rate (%)", min_value=0.0, key="interest_rate"
 )
-
-strata_fee = st.sidebar.number_input(
+st.sidebar.number_input(
     "Monthly Strata Fee (CAD)", min_value=0, step=10, key="strata_fee"
 )
-
-property_tax = st.sidebar.number_input(
+st.sidebar.number_input(
     "Annual Property Tax (CAD)", min_value=0, step=100, key="property_tax"
 )
-
-expected_rent = st.sidebar.number_input(
+st.sidebar.number_input(
     "Expected Monthly Rent (CAD)", min_value=0, step=10, key="expected_rent"
 )
-
-vacancy_pct = st.sidebar.number_input(
+st.sidebar.number_input(
     "Vacancy Rate (%)", min_value=0.0, max_value=100.0, key="vacancy_pct"
 )
-
-scenario = st.sidebar.selectbox(
-    "Scenario", ["Live-in", "Rent-out"], key="scenario"
+st.sidebar.selectbox(
+    "Scenario", options=["Live-in", "Rent-out"], key="scenario"
 )
-
-
-@st.cache_data
-def run_simulation() -> pd.DataFrame:
-    return simulate_property(
-        price=purchase_price,
-        rent=expected_rent,
-        down_pct=down_payment_pct,
-        annual_rate=interest_rate,
-        strata_fee=strata_fee,
-        property_tax=property_tax,
-        vacancy_pct=vacancy_pct,
-    )
 
 st.header("Key Metrics")
 run_col, reset_col = st.columns(2)
 run_clicked = run_col.button("Run Simulation")
 if reset_col.button("Reset inputs"):
-    reset_inputs()
+    for k, v in DEFAULTS.items():
+        st.session_state[k] = v
+    st.rerun()
 st.caption("Pick a listing or use custom inputs.")
 col1, col2, col3 = st.columns(3)
 
 if run_clicked:
-    df = run_simulation()
-    metrics = key_metrics(df)
+    price = int(st.session_state["purchase_price"])
+    rent = int(st.session_state["expected_rent"])
+    if price == 0 or rent == 0:
+        st.warning("Please enter values or pick a listing.")
+    else:
+        down = float(st.session_state["down_payment_pct"]) / 100.0
+        rate = float(st.session_state["interest_rate"]) / 100.0
+        strata = int(st.session_state["strata_fee"])
+        tax = int(st.session_state["property_tax"])
+        vac = float(st.session_state["vacancy_pct"]) / 100.0
 
-    col1.metric("Monthly Mortgage", f"${metrics['monthly_mortgage']:.0f}")
-    col2.metric("Median Year-1 Cash Flow", f"${metrics['p50_cash_flow']:.0f}")
-    col3.metric("Equity Year 10", f"${metrics['p50_equity_year10']:.0f}")
+        df = simulate_property(
+            n_sim=1000,
+            horizon_years=10,
+            price=price,
+            rent=rent,
+            down_pct=down,
+            annual_rate=rate,
+            strata_fee=strata,
+            property_tax=tax,
+            vacancy_pct=vac,
+        )
+        metrics = key_metrics(df)
 
-    equity_stats = (
-        df.groupby("year")["equity"]
-        .quantile([0.1, 0.5, 0.9])
-        .unstack()
-        .reset_index()
-        .rename(columns={0.1: "p10", 0.5: "p50", 0.9: "p90"})
-    )
+        mortgage = mortgage_payment(
+            principal=price * (1 - down),
+            annual_rate=rate,
+            amort_years=25,
+        )
+        col1.metric("Monthly Mortgage", fmt_money(mortgage, cents=True))
+        col2.metric("Median Year-1 Cash Flow", fmt_money(metrics["p50_cash_flow"]))
+        col3.metric("Equity Year 10", fmt_money(metrics["p50_equity_year10"]))
 
-    line = alt.Chart(equity_stats).mark_line().encode(x="year", y="p50")
-    band = alt.Chart(equity_stats).mark_area(opacity=0.3).encode(
-        x="year", y="p10", y2="p90"
-    )
-    equity_chart = band + line
+        equity_stats = (
+            df.groupby("year")["equity"]
+            .quantile([0.1, 0.5, 0.9])
+            .unstack()
+            .reset_index()
+            .rename(columns={0.1: "p10", 0.5: "p50", 0.9: "p90"})
+        )
 
-    cf_hist = (
-        alt.Chart(df[df["year"] == 1])
-        .mark_bar()
-        .encode(x=alt.X("net_cash_flow", bin=True), y="count()")
-    )
+        line = alt.Chart(equity_stats).mark_line().encode(x="year", y="p50")
+        band = alt.Chart(equity_stats).mark_area(opacity=0.3).encode(
+            x="year", y="p10", y2="p90"
+        )
+        equity_chart = band + line
 
-    st.header("Projections")
-    st.altair_chart(equity_chart, use_container_width=True)
-    st.altair_chart(cf_hist, use_container_width=True)
+        cf_hist = (
+            alt.Chart(df[df["year"] == 1])
+            .mark_bar()
+            .encode(x=alt.X("net_cash_flow", bin=True), y="count()")
+        )
+
+        st.header("Projections")
+        st.altair_chart(equity_chart, use_container_width=True)
+        st.altair_chart(cf_hist, use_container_width=True)
